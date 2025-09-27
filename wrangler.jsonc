@@ -1,0 +1,48 @@
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "cfw-poor-man-queue",
+	"main": "src/index.ts",
+	"compatibility_date": "2025-09-27",
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	"durable_objects": {
+		"bindings": [
+			{
+				"name": "SIMPLE_QUEUE",
+				"class_name": "SimpleDurableObjectQueue"
+			}
+		]
+	},
+	"r2_buckets": [
+		{
+			"binding": "STORAGE",
+			"bucket_name": "simple-queue-storage"
+		},
+		{
+			"bucket_name": "simple-queue-storage",
+			"binding": "simple_queue_storage"
+		}
+	],
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+	"vars": {
+		"API_KEY": "your-secret-api-key",
+		"MAX_RETRIES": "3",
+		"RETRY_DELAY_MS": "60000",
+		"MAX_PAYLOAD_SIZE": "104857600",
+		"MAX_BATCH_SIZE": "50",
+		"MAX_QUEUE_MEMORY": "67108864"
+	},
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": [
+        "SimpleDurableObjectQueue"
+      ]
+    }
+  ]
+}
