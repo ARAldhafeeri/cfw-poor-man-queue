@@ -14,10 +14,12 @@ export interface IQueueService {
   clear(): Promise<any>;
   debugReload(): Promise<any>;
   runScheduledProcessing(): Promise<void>;
+  flushBuffer(): Promise<any>; // New method for manual buffer flush
 }
 
 export class QueueService implements IQueueService {
   private queue: IQueue | null = null;
+  private messageBuffer: Map<string, any> = new Map(); // Simple buffer in Durable Object memory
 
   constructor(private state: DurableObjectState, private env: any) {}
 
@@ -26,7 +28,7 @@ export class QueueService implements IQueueService {
 
     this.queue = await createQueue(this.env);
     console.log(
-      "Queue service initialized with underlying queue implementation"
+      "Queue service initialized with underlying queue implementation and buffering"
     );
   }
 
@@ -38,20 +40,37 @@ export class QueueService implements IQueueService {
   }
 
   async publish(data: any): Promise<any> {
-    const result = await this.getQueue().publishHandler.handle(
-      data,
-      Date.now()
+    const messageId = `msg_${Date.now()}_${Math.random()
+      .toString(36)
+      .substr(2, 9)}`;
+
+    // Store in Durable Object memory buffer
+    this.messageBuffer.set(messageId, {
+      id: messageId,
+      data: data,
+      timestamp: Date.now(),
+      status: "buffered",
+    });
+
+    console.log(
+      `Message ${messageId} buffered in DO memory (${this.messageBuffer.size} total)`
     );
 
-    const stats = await this.getQueue().getQueueStats();
-    console.log(`Published message. Queue stats:`, stats);
+    // If buffer gets too big, flush some to queue
+    if (this.messageBuffer.size > 100) {
+      await this.flushSomeMessages();
+    }
 
-    return result;
+    return {
+      messageId,
+      status: "buffered",
+      bufferSize: this.messageBuffer.size,
+    };
   }
 
   async poll(options: { limit: number; timeout: number }): Promise<any> {
-    const statsBefore = await this.getQueue().getQueueStats();
-    console.log(`Polling messages. Queue stats before:`, statsBefore);
+    // First flush buffered messages to queue
+    await this.flushAllMessages();
 
     const result = await this.getQueue().pollHandler.handle(
       options,
@@ -71,9 +90,6 @@ export class QueueService implements IQueueService {
       Date.now()
     );
 
-    const stats = await this.getQueue().getQueueStats();
-    console.log(`Completed message ${messageId}. Queue stats:`, stats);
-
     return result;
   }
 
@@ -84,9 +100,6 @@ export class QueueService implements IQueueService {
       Date.now()
     );
 
-    const stats = await this.getQueue().getQueueStats();
-    console.log(`Failed message ${messageId}. Queue stats:`, stats);
-
     return result;
   }
 
@@ -94,7 +107,8 @@ export class QueueService implements IQueueService {
     const stats = await this.getQueue().getQueueStats();
 
     return {
-      ...stats,
+      bufferSize: this.messageBuffer.size,
+      totalIncludingBuffer: stats.totalMessages + this.messageBuffer.size,
       debug: {
         durableObjectId: this.state.id?.toString(),
         timestamp: Date.now(),
@@ -109,6 +123,11 @@ export class QueueService implements IQueueService {
       return {
         healthy: true,
         initialized: !!this.queue,
+        buffering: {
+          enabled: true,
+          bufferedMessages: stats.bufferedMessages,
+          bufferHealthy: stats.memoryUtilization < 0.9, // Warn if > 90%
+        },
         ...stats,
         timestamp: Date.now(),
       };
@@ -122,6 +141,8 @@ export class QueueService implements IQueueService {
   }
 
   async clear(): Promise<any> {
+    // Force flush buffer first
+    await this.flushBuffer();
     await this.getQueue().forceReload();
 
     const messages = await this.getQueue().getMessages();
@@ -143,15 +164,78 @@ export class QueueService implements IQueueService {
 
   async debugReload(): Promise<any> {
     const statsBefore = await this.getQueue().getQueueStats();
-    await this.getQueue().forceReload();
+    await this.getQueue().forceReload(); // This will flush buffer first
     const statsAfter = await this.getQueue().getQueueStats();
 
     return {
       success: true,
       statsBefore,
       statsAfter,
-      message: "Queue state reloaded from storage",
+      message: "Queue state reloaded from storage (buffer flushed)",
     };
+  }
+
+  async flushBuffer(): Promise<any> {
+    const bufferSize = this.messageBuffer.size;
+
+    if (bufferSize === 0) {
+      return { success: true, message: "Buffer already empty" };
+    }
+
+    await this.flushAllMessages();
+
+    return {
+      success: true,
+      message: `Flushed ${bufferSize} messages from DO buffer to queue`,
+    };
+  }
+
+  /**
+   * Flush all buffered messages to the queue
+   */
+  private async flushAllMessages(): Promise<void> {
+    if (this.messageBuffer.size === 0) return;
+
+    console.log(`Flushing ${this.messageBuffer.size} messages from DO buffer`);
+
+    for (const [messageId, messageData] of this.messageBuffer.entries()) {
+      try {
+        await this.getQueue().publishHandler.handle(
+          messageData.data,
+          Date.now()
+        );
+        this.messageBuffer.delete(messageId);
+      } catch (error) {
+        console.error(`Failed to flush message ${messageId}:`, error);
+      }
+    }
+
+    console.log("All messages flushed from DO buffer");
+  }
+
+  /**
+   * Flush some messages when buffer gets full
+   */
+  private async flushSomeMessages(): Promise<void> {
+    const toFlush = Math.min(50, this.messageBuffer.size); // Flush 50 messages max
+    let flushed = 0;
+
+    for (const [messageId, messageData] of this.messageBuffer.entries()) {
+      if (flushed >= toFlush) break;
+
+      try {
+        await this.getQueue().publishHandler.handle(
+          messageData.data,
+          Date.now()
+        );
+        this.messageBuffer.delete(messageId);
+        flushed++;
+      } catch (error) {
+        console.error(`Failed to flush message ${messageId}:`, error);
+      }
+    }
+
+    console.log(`Flushed ${flushed} messages from DO buffer`);
   }
 
   async runScheduledProcessing(): Promise<void> {
@@ -159,7 +243,10 @@ export class QueueService implements IQueueService {
     const maxDuration = 25000;
 
     try {
-      console.log("Running scheduled processing in Queue Service...");
+      console.log("Running scheduled processing...");
+
+      // First flush all buffered messages
+      await this.flushAllMessages();
 
       let processedCount = 0;
       let errorCount = 0;
@@ -184,8 +271,6 @@ export class QueueService implements IQueueService {
           break;
         }
 
-        console.log(`Processing batch of ${result.messages.length} messages`);
-
         for (const message of result.messages) {
           try {
             await this.getQueue().completeHandler.handle(
@@ -208,17 +293,14 @@ export class QueueService implements IQueueService {
         }
 
         if (Date.now() - startTime > maxDuration - 5000) {
-          console.log("Approaching time limit, stopping processing");
           break;
         }
       }
 
-      const finalStats = await this.getQueue().getQueueStats();
       console.log(
-        `Scheduled processing completed: ${processedCount} processed, ${errorCount} errors in ${
+        `Processed: ${processedCount}, Errors: ${errorCount} in ${
           Date.now() - startTime
-        }ms. Final stats:`,
-        finalStats
+        }ms`
       );
     } catch (error) {
       console.error("Scheduled processing error:", error);

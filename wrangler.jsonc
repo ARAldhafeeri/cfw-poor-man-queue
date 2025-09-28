@@ -35,12 +35,13 @@
 		"RETRY_DELAY_MS": "60000",
 		"MAX_PAYLOAD_SIZE": "104857600",
 		"MAX_BATCH_SIZE": "50",
-		"MAX_QUEUE_MEMORY": "67108864"
+		"MAX_QUEUE_MEMORY": "67108864",
+		"MESSAGE_LOAD_LIMIT": "100",
 	},
   "migrations": [
     {
       "tag": "v1",
-      "new_classes": [
+      "new_sqlite_classes": [
         "SimpleDurableObjectQueue"
       ]
     }

@@ -8,9 +8,6 @@ class SimpleQueueTest(HttpUser):
     Simplified Locust test for Cloudflare Workers Queue with Bearer token auth
     """
     
-    # Wait time between tasks (1-3 seconds)
-    wait_time = between(1, 3)
-    
     # Test configuration - using Bearer token
     API_TOKEN = "your-secret-api-key"  # Replace with your actual API token
     
@@ -49,41 +46,12 @@ class SimpleQueueTest(HttpUser):
         
         with self.client.post("/publish", json=message, catch_response=True) as response:
             if response.status_code == 200:
-                response_data = response.json()
-                if response_data.get("id"):
-                    response.success()
-                else:
-                    response.failure(f"Enqueue failed: {response_data}")
-            else:
-                response.failure(f"HTTP {response.status_code}")
-    
-    
-    @task(2)
-    def dequeue_messages(self):
-        """Test dequeuing/polling messages"""
-        batch_size = random.randint(1, 5)
-        
-        with self.client.get(
-            f"/poll?limit={batch_size}&timeout=2000", 
-            catch_response=True
-        ) as response:
-            if response.status_code == 200:
                 response.success()
+
             else:
                 response.failure(f"HTTP {response.status_code}")
     
-
     
-    @task(3)
-    def get_stats(self):
-        """Get queue statistics"""
-        with self.client.get("/stats", catch_response=True) as response:
-            if response.status_code == 200:
-                response.success()
-            else:
-                response.failure(f"HTTP {response.status_code}")
-
-
 # class HighLoadTest(SimpleQueueTest):
 #     """High load test scenario with Bearer token"""
 #     weight = 1

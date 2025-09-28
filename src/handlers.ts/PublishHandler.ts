@@ -7,7 +7,6 @@ import {
   IRequestHandler,
   PublishResponse,
 } from "entities/interfaces/IRequestHandler";
-import { HonoRequest } from "hono";
 import { MemoryManager } from "memory/MemoryManager";
 import { calculateSize, isLargePayload } from "payload";
 import { MessageRepository } from "repositories/MessageRepository";
@@ -35,7 +34,10 @@ export class PublishHandler implements IRequestHandler {
       };
     }
 
-    const isLarge = isLargePayload(payloadSize, this.dependencies.limits);
+    const isLarge = isLargePayload(
+      payloadSize,
+      this.dependencies.limits as any
+    ); // Need to fix type compatibility between backend and client
     const willExceedMemory =
       this.dependencies.memoryManager.canAccommodate(payloadSize);
 

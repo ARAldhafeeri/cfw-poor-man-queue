@@ -12,6 +12,7 @@ export type Environment = {
     MAX_QUEUE_MEMORY: string;
     MAX_RETRIES: string;
     RETRY_DELAY_MS: string;
+    MESSAGE_LOAD_LIMIT: string;
   };
 };
 
@@ -31,6 +32,7 @@ export interface QueueLimits {
   maxBatchSize: number;
   maxQueueMemory: number;
   maxRequestDuration: number;
+  messageLoadLimit: number;
 }
 
 export interface QueueStats {

@@ -11,13 +11,13 @@ import { FailHandler } from "handlers.ts/FailHandler";
 import { PollHandler } from "handlers.ts/PollHandler";
 import { PublishHandler } from "handlers.ts/PublishHandler";
 import { MemoryManager } from "memory/MemoryManager";
-import { calculateSize, isLargePayload } from "payload";
+import { calculateSize } from "payload";
 import { MessageRepository } from "repositories/MessageRepository";
 import { ExponentialBackoffStrategy } from "retry/ExponentialBackoffStrategy";
 import { QueueStatsService } from "services/QueueStatsService";
 import { PayloadStorage } from "storage/PayloadStorage";
 import { R2StorageAdapter } from "storage/R2StorageAdapter";
-import { Environment, QueueLimits } from "entities/domain/queue";
+import { QueueLimits } from "entities/domain/queue";
 import { IQueue } from "entities/interfaces/IQueue";
 
 export class Queue implements IQueue {
@@ -49,10 +49,12 @@ export class Queue implements IQueue {
       maxBatchSize: parseInt(env.MAX_BATCH_SIZE),
       maxQueueMemory: parseInt(env.MAX_QUEUE_MEMORY),
       maxRequestDuration: 25000,
+      messageLoadLimit: parseInt(env.MESSAGE_LOAD_LIMIT),
     };
   }
+
   /**
-   *  Ensure messages are loaded before any operation
+   * Ensure messages are loaded before any operation
    */
   private async ensureLoaded(): Promise<void> {
     if (this.isLoaded) return;
@@ -66,12 +68,14 @@ export class Queue implements IQueue {
   }
 
   /**
-   *  Load messages and synchronize in-memory state
+   * Load messages and synchronize in-memory state
    */
   private async loadMessages(): Promise<void> {
     try {
       console.log("Loading messages from storage...");
-      const messages = await this.messageRepository.loadMessages();
+      const messages = await this.messageRepository.loadMessages(
+        this.limits.messageLoadLimit
+      );
       this.messages = [...messages];
       this.processing.clear();
       this.memoryManager.recalculateFromMessages(this.messages);
@@ -85,11 +89,9 @@ export class Queue implements IQueue {
   }
 
   /**
-   *  Synchronized method to add a message
+   * Simple buffered add - just add to memory, persist later
    */
   async addMessage(message: Message): Promise<void> {
-    await this.ensureLoaded();
-
     if (
       !message.isLarge &&
       !this.memoryManager.canAccommodate(message.size || 0)
@@ -97,98 +99,90 @@ export class Queue implements IQueue {
       throw new Error(`Cannot accommodate message: would exceed memory limit`);
     }
 
+    // Just add to memory - no immediate persistence
     this.messages.push(message);
     this.memoryManager.addMessage(message);
-    await this.messageRepository.saveMessage(message);
-    console.log(`Message ${message.id} added and persisted`);
+    console.log(`Message ${message.id} added to memory buffer`);
   }
 
   /**
-   *  Synchronized method to remove a message
+   * Flush buffer to R2 storage
+   */
+  async flushToStorage(): Promise<void> {
+    if (this.messages.length === 0) return;
+
+    console.log(`Flushing ${this.messages.length} messages to R2`);
+
+    for (const message of this.messages) {
+      try {
+        await this.messageRepository.saveMessage(message);
+      } catch (error) {
+        console.error(`Failed to save message ${message.id}:`, error);
+      }
+    }
+
+    console.log("Buffer flushed to R2 storage");
+  }
+
+  /**
+   * Synchronized method to remove a message
    */
   async removeMessage(messageId: string): Promise<boolean> {
-    await this.ensureLoaded();
-
     const index = this.messages.findIndex((msg) => msg.id === messageId);
     if (index === -1) {
       console.warn(`Message ${messageId} not found for removal`);
       return false;
     }
 
-    // Remove from in-memory state
     const [removedMessage] = this.messages.splice(index, 1);
-
-    // Update memory tracking
     this.memoryManager.removeMessage(messageId, removedMessage.size || 0);
-
-    // Remove from persistent storage
     await this.messageRepository.deleteMessage(messageId);
 
-    console.log(`Message ${messageId} removed and deleted from storage`);
+    console.log(`Message ${messageId} removed`);
     return true;
   }
 
   /**
-   *  Synchronized method to update a message
+   * Synchronized method to update a message
    */
   async updateMessage(message: Message): Promise<void> {
-    await this.ensureLoaded();
-
     const index = this.messages.findIndex((msg) => msg.id === message.id);
     if (index === -1) {
       console.warn(`Message ${message.id} not found for update`);
       return;
     }
 
-    // Update in-memory state
     this.messages[index] = { ...message };
-
-    // Persist to storage
     await this.messageRepository.saveMessage(message);
-
-    console.log(`Message ${message.id} updated and persisted`);
+    console.log(`Message ${message.id} updated`);
   }
 
   /**
-   *  Get messages (read-only copy)
+   * Get messages
    */
   async getMessages(): Promise<Message[]> {
-    await this.ensureLoaded();
-    return [...this.messages]; // Return copy to prevent external mutation
+    return [...this.messages];
   }
 
   /**
-   *  Get processing set (read-only copy)
+   * Get processing set
    */
   async getProcessing(): Promise<Set<string>> {
-    await this.ensureLoaded();
-    return new Set(this.processing); // Return copy to prevent external mutation
+    return new Set(this.processing);
   }
 
-  /**
-   *  Start processing a message
-   */
   async startProcessing(messageId: string): Promise<void> {
-    await this.ensureLoaded();
     this.processing.add(messageId);
     console.log(`Started processing message ${messageId}`);
   }
 
-  /**
-   *  Stop processing a message
-   */
   async stopProcessing(messageId: string): Promise<void> {
-    await this.ensureLoaded();
     this.processing.delete(messageId);
     console.log(`Stopped processing message ${messageId}`);
   }
 
-  /**
-   *  Get queue statistics
-   */
   async getQueueStats(): Promise<any> {
     await this.ensureLoaded();
-
     const now = Date.now();
     return {
       totalMessages: this.messages.length,
@@ -213,9 +207,6 @@ export class Queue implements IQueue {
     };
   }
 
-  /**
-   *  Force reload from storage (for debugging)
-   */
   async forceReload(): Promise<void> {
     this.isLoaded = false;
     await this.ensureLoaded();
@@ -226,27 +217,22 @@ export class Queue implements IQueue {
  * Create queue with proper initialization and dependency injection
  */
 export const createQueue = async (env: any): Promise<IQueue> => {
-  // Create limits from environment
   const limits: QueueLimits = {
-    maxPayloadSize: parseInt(env.MAX_PAYLOAD_SIZE || "1048576"), // 1MB default
+    maxPayloadSize: parseInt(env.MAX_PAYLOAD_SIZE || "1048576"),
     maxBatchSize: parseInt(env.MAX_BATCH_SIZE || "10"),
-    maxQueueMemory: parseInt(env.MAX_QUEUE_MEMORY || "104857600"), // 100MB default
+    maxQueueMemory: parseInt(env.MAX_QUEUE_MEMORY || "104857600"),
     maxRequestDuration: 25000,
+    messageLoadLimit: parseInt(env.MESSAGE_LOAD_LIMIT || "100"),
   };
 
-  // Create storage layer
   const storage = new R2StorageAdapter(env.STORAGE);
   const payloadStorage = new PayloadStorage(storage);
   const messageRepository = new MessageRepository(storage, calculateSize);
 
-  // Create core services
   const memoryManager = new MemoryManager(limits);
   const retryStrategy = new ExponentialBackoffStrategy();
   const batchProcessor = new BatchProcessor(payloadStorage);
 
-  // Create stats service (will be injected into queue)
-
-  // Create the queue instance with all dependencies
   const queue = new Queue(
     env,
     storage,
@@ -255,7 +241,6 @@ export const createQueue = async (env: any): Promise<IQueue> => {
     memoryManager,
     retryStrategy,
     batchProcessor,
-    // will assign below to keep durable object state synced
     null as any,
     null as any,
     null as any,
@@ -265,7 +250,6 @@ export const createQueue = async (env: any): Promise<IQueue> => {
 
   const statsService = new QueueStatsService(queue, memoryManager, limits);
 
-  // Create handlers with their dependencies
   const publishHandler = new PublishHandler(queue, {
     limits: limits,
     memoryManager: memoryManager,
@@ -295,13 +279,12 @@ export const createQueue = async (env: any): Promise<IQueue> => {
     retryDelay: parseInt(env.MAX_RETRIES || "3"),
   });
 
-  // intialize handlers here to keep state synced
   queue.publishHandler = publishHandler;
   queue.statsService = statsService;
   queue.pollHandler = pollHandler;
   queue.completeHandler = completeHandler;
   queue.failHandler = failHandler;
 
-  console.log("Queue created and initialized successfully");
+  console.log("Simple buffered queue created");
   return queue;
 };

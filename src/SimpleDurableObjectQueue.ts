@@ -3,7 +3,7 @@ import { IQueueService, QueueService } from "./QueueService";
 import { Environment } from "entities/domain/queue";
 
 /**
- * Durable Object acts as the coordination layer, not the implementation
+ * Durable Object with optimized memory buffering
  */
 export class SimpleDurableObjectQueue extends DurableObject {
   private queueService: IQueueService | null = null;
@@ -23,10 +23,10 @@ export class SimpleDurableObjectQueue extends DurableObject {
     }
 
     this.initializationPromise = (async () => {
-      console.log("Initializing Durable Object queue service...");
+      console.log("Initializing Durable Object queue service with buffering...");
       this.queueService = new QueueService(this.state, this.env);
       await this.queueService.initialize();
-      console.log("Durable Object queue service initialized successfully");
+      console.log("Durable Object queue service with buffering initialized successfully");
     })();
 
     return this.initializationPromise;
@@ -39,10 +39,16 @@ export class SimpleDurableObjectQueue extends DurableObject {
     return this.queueService;
   }
 
+  /**
+   * Fast publish with memory buffering
+   */
   async publish(data: any): Promise<any> {
     return this.getQueueService().publish(data);
   }
 
+  /**
+   * Poll messages (automatically flushes buffer first)
+   */
   async poll(options: { limit: number; timeout: number }): Promise<any> {
     return this.getQueueService().poll(options);
   }
@@ -55,10 +61,16 @@ export class SimpleDurableObjectQueue extends DurableObject {
     return this.getQueueService().fail(data.messageId, data.error);
   }
 
+  /**
+   * Get stats including buffer information
+   */
   async getStats(): Promise<any> {
     return this.getQueueService().getStats();
   }
 
+  /**
+   * Health check including buffer health
+   */
   async getHealth(): Promise<any> {
     return this.getQueueService().getHealth();
   }
@@ -71,6 +83,16 @@ export class SimpleDurableObjectQueue extends DurableObject {
     return this.getQueueService().debugReload();
   }
 
+  /**
+   * Manual buffer flush endpoint
+   */
+  async flush_buffer(): Promise<any> {
+    return this.getQueueService().flushBuffer();
+  }
+
+  /**
+   * Scheduled processing (flushes buffer first)
+   */
   async runScheduledProcessing(): Promise<void> {
     return this.getQueueService().runScheduledProcessing();
   }

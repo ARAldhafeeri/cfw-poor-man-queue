@@ -8,7 +8,7 @@ export class MessageRepository implements IMessageRepository {
     private payloadCalculator: (data: any) => number
   ) {}
 
-  async loadMessages(): Promise<Message[]> {
+  async loadMessages(limit: number): Promise<Message[]> {
     try {
       const objects = await this.storage.list({ prefix: "messages/" });
       const messages = await Promise.all(
