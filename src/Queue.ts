@@ -26,10 +26,13 @@ export class Queue implements IQueue {
   private limits: QueueLimits;
   private loadPromise: Promise<void> | null = null;
   private isLoaded: boolean = false;
+  private bufferSizeBytes: number;
+  private currentBufferSize: number = 0;
+  private lastFlushTime: number = Date.now();
+  private flushTimeout: any = null;
 
   constructor(
     env: any,
-    // Dependencies injected
     public storage: IStorage,
     public payloadStorage: IPayloadStorage,
     public messageRepository: IMessageRepository,
@@ -37,20 +40,192 @@ export class Queue implements IQueue {
     public retryStrategy: IRetryStrategy,
     public batchProcessor: IBatchProcessor,
     public statsService: QueueStatsService,
-
-    // Handlers
     public publishHandler: PublishHandler,
     public pollHandler: PollHandler,
     public completeHandler: CompleteHandler,
     public failHandler: FailHandler
   ) {
+    this.bufferSizeBytes = parseInt(env.BUFFER_SIZE || "67108864"); // 64MB default
     this.limits = {
       maxPayloadSize: parseInt(env.MAX_PAYLOAD_SIZE),
       maxBatchSize: parseInt(env.MAX_BATCH_SIZE),
       maxQueueMemory: parseInt(env.MAX_QUEUE_MEMORY),
       maxRequestDuration: 25000,
       messageLoadLimit: parseInt(env.MESSAGE_LOAD_LIMIT),
+      bufferFlush: parseInt(env.BUFFER_FLUSH || "9"),
     };
+
+    this.setupFlushTimer();
+  }
+
+  /**
+   * Setup automatic flush timer (9 seconds)
+   */
+  private setupFlushTimer(): void {
+    if (this.flushTimeout) {
+      clearTimeout(this.flushTimeout);
+    }
+
+    this.flushTimeout = setTimeout(() => {
+      this.autoFlushIfNeeded();
+    }, this.limits.bufferFlush * 1000);
+  }
+
+  /**
+   * Check if buffer should be flushed
+   */
+  private shouldFlush(): boolean {
+    const timeSinceLastFlush = Date.now() - this.lastFlushTime;
+    return (
+      this.currentBufferSize >= this.bufferSizeBytes ||
+      timeSinceLastFlush >= this.limits.bufferFlush * 1000 - 100
+    );
+  }
+
+  /**
+   * Auto-flush if conditions are met
+   */
+  private async autoFlushIfNeeded(): Promise<void> {
+    if (this.shouldFlush() && this.messages.length > 0) {
+      console.log(
+        `Auto-flushing buffer: ${this.messages.length} messages, ${this.currentBufferSize} bytes`
+      );
+      await this.flushToStorage();
+    }
+    this.setupFlushTimer();
+  }
+
+  /**
+   * Add message with buffering - check flush conditions
+   */
+  async addMessage(message: Message): Promise<void> {
+    const messageSize = message.size || 1024;
+
+    // should send 429 for retry instead of 500 error.
+    if (!this.memoryManager.canAccommodate(messageSize)) {
+      throw new Error(`Cannot accommodate message: would exceed memory limit`);
+    }
+
+    this.messages.push(message);
+    this.currentBufferSize += messageSize;
+    this.memoryManager.addMessage(message);
+
+    console.log(
+      `Message ${message.id} added to buffer. Current buffer: ${this.currentBufferSize}/${this.bufferSizeBytes} bytes`
+    );
+
+    if (this.currentBufferSize >= this.bufferSizeBytes) {
+      console.log(`Buffer size threshold reached, flushing...`);
+      await this.flushToStorage();
+    }
+  }
+
+  /**
+   * Flush buffer to R2 storage as batched write-ahead logs
+   */
+  async flushToStorage(): Promise<void> {
+    /**
+     * No messages to flush
+     */
+    if (this.messages.length === 0) {
+      this.lastFlushTime = Date.now();
+      return;
+    }
+
+    console.log(
+      `Flushing ${this.messages.length} messages (${this.currentBufferSize} bytes) to R2 as batched WAL`
+    );
+
+    try {
+      // Create batches of up to 64MB each
+      const batches = this.createBatches(this.messages, 64 * 1024 * 1024);
+      console.log(`Created ${batches.length} batches for flushing`);
+
+      // Save each batch as a single R2 object
+      for (let i = 0; i < batches.length; i++) {
+        const batch = batches[i];
+        const batchKey = `wal/batch_${Date.now()}_${i}.json`;
+
+        const batchData = {
+          batchId: batchKey,
+          timestamp: Date.now(),
+          messageCount: batch.messages.length,
+          totalSize: batch.totalSize,
+          messages: batch.messages,
+        };
+
+        await this.storage.put(batchKey, JSON.stringify(batchData));
+        console.log(
+          `Saved batch ${batchKey} with ${batch.messages.length} messages`
+        );
+      }
+
+      // Now save individual messages for normal operations
+      // This can be done in parallel for better performance
+      const savePromises = this.messages.map((message) =>
+        this.messageRepository.saveMessage(message)
+      );
+      await Promise.all(savePromises);
+
+      // Reset buffer state
+      this.currentBufferSize = 0;
+      this.lastFlushTime = Date.now();
+
+      console.log(
+        `Successfully flushed ${this.messages.length} messages in ${batches.length} batches`
+      );
+
+      // clear messages
+      this.messages = [];
+    } catch (error) {
+      console.error(`Failed to flush buffer to R2:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Create batches of messages where each batch is <= maxBatchSizeBytes
+   */
+  private createBatches(
+    messages: Message[],
+    maxBatchSizeBytes: number
+  ): Array<{
+    messages: Message[];
+    totalSize: number;
+  }> {
+    const batches: Array<{ messages: Message[]; totalSize: number }> = [];
+    let currentBatch: Message[] = [];
+    let currentBatchSize = 0;
+
+    for (const message of messages) {
+      const messageSize = message.size || 1024;
+
+      // If adding this message would exceed batch size, start new batch
+      if (
+        currentBatchSize + messageSize > maxBatchSizeBytes &&
+        currentBatch.length > 0
+      ) {
+        batches.push({
+          messages: [...currentBatch],
+          totalSize: currentBatchSize,
+        });
+        currentBatch = [];
+        currentBatchSize = 0;
+      }
+
+      currentBatch.push(message);
+      currentBatchSize += messageSize;
+    }
+
+    // Don't forget the last batch
+    if (currentBatch.length > 0) {
+      batches.push({
+        messages: currentBatch,
+        totalSize: currentBatchSize,
+      });
+    }
+
+    return batches;
   }
 
   /**
@@ -78,50 +253,24 @@ export class Queue implements IQueue {
       );
       this.messages = [...messages];
       this.processing.clear();
+
+      // Recalculate buffer size from loaded messages
+      this.currentBufferSize = this.messages.reduce(
+        (total, msg) => total + (msg.size || 1024),
+        0
+      );
       this.memoryManager.recalculateFromMessages(this.messages);
-      console.log(`Loaded ${this.messages.length} messages`);
+
+      console.log(
+        `Loaded ${this.messages.length} messages, buffer size: ${this.currentBufferSize} bytes`
+      );
     } catch (error) {
       console.error("Load messages error:", error);
       this.messages = [];
       this.processing.clear();
+      this.currentBufferSize = 0;
       this.memoryManager.setUsage(0);
     }
-  }
-
-  /**
-   * Simple buffered add - just add to memory, persist later
-   */
-  async addMessage(message: Message): Promise<void> {
-    if (
-      !message.isLarge &&
-      !this.memoryManager.canAccommodate(message.size || 0)
-    ) {
-      throw new Error(`Cannot accommodate message: would exceed memory limit`);
-    }
-
-    // Just add to memory - no immediate persistence
-    this.messages.push(message);
-    this.memoryManager.addMessage(message);
-    console.log(`Message ${message.id} added to memory buffer`);
-  }
-
-  /**
-   * Flush buffer to R2 storage
-   */
-  async flushToStorage(): Promise<void> {
-    if (this.messages.length === 0) return;
-
-    console.log(`Flushing ${this.messages.length} messages to R2`);
-
-    for (const message of this.messages) {
-      try {
-        await this.messageRepository.saveMessage(message);
-      } catch (error) {
-        console.error(`Failed to save message ${message.id}:`, error);
-      }
-    }
-
-    console.log("Buffer flushed to R2 storage");
   }
 
   /**
@@ -135,10 +284,16 @@ export class Queue implements IQueue {
     }
 
     const [removedMessage] = this.messages.splice(index, 1);
-    this.memoryManager.removeMessage(messageId, removedMessage.size || 0);
+    const messageSize = removedMessage.size || 1024;
+
+    // Update buffer size
+    this.currentBufferSize -= messageSize;
+    this.memoryManager.removeMessage(messageId, messageSize);
     await this.messageRepository.deleteMessage(messageId);
 
-    console.log(`Message ${messageId} removed`);
+    console.log(
+      `Message ${messageId} removed. Buffer size: ${this.currentBufferSize} bytes`
+    );
     return true;
   }
 
@@ -152,16 +307,27 @@ export class Queue implements IQueue {
       return;
     }
 
+    const oldMessage = this.messages[index];
+    const oldSize = oldMessage.size || 1024;
+    const newSize = message.size || 1024;
+
+    // Update buffer size if message size changed
+    if (oldSize !== newSize) {
+      this.currentBufferSize = this.currentBufferSize - oldSize + newSize;
+    }
+
     this.messages[index] = { ...message };
     await this.messageRepository.saveMessage(message);
-    console.log(`Message ${message.id} updated`);
+    console.log(
+      `Message ${message.id} updated. Buffer size: ${this.currentBufferSize} bytes`
+    );
   }
 
   /**
    * Get messages
    */
   async getMessages(): Promise<Message[]> {
-    return [...this.messages];
+    return this.messages;
   }
 
   /**
@@ -184,6 +350,7 @@ export class Queue implements IQueue {
   async getQueueStats(): Promise<any> {
     await this.ensureLoaded();
     const now = Date.now();
+
     return {
       totalMessages: this.messages.length,
       processingCount: this.processing.size,
@@ -196,20 +363,113 @@ export class Queue implements IQueue {
       memoryUsage: this.memoryManager.getCurrentUsage(),
       memoryLimit: this.limits.maxQueueMemory,
       memoryUtilization: this.memoryManager.getUtilization(),
+      bufferStats: {
+        currentSizeBytes: this.currentBufferSize,
+        maxSizeBytes: this.bufferSizeBytes,
+        utilization: (this.currentBufferSize / this.bufferSizeBytes) * 100,
+        timeSinceLastFlush: now - this.lastFlushTime,
+        shouldFlush: this.shouldFlush(),
+        messagesInBuffer: this.messages.length,
+      },
       largeMessages: this.messages.filter((msg) => msg.isLarge).length,
       avgMessageSize:
         this.messages.length > 0
-          ? Math.round(
-              this.messages.reduce((total, msg) => total + (msg.size || 0), 0) /
-                this.messages.length
-            )
+          ? Math.round(this.currentBufferSize / this.messages.length)
           : 0,
     };
   }
 
   async forceReload(): Promise<void> {
     this.isLoaded = false;
-    await this.ensureLoaded();
+  }
+
+  /**
+   * Manual buffer flush for testing or emergency
+   */
+  async manualFlush(): Promise<void> {
+    console.log("Manual buffer flush requested");
+    await this.flushToStorage();
+  }
+
+  /**
+   * Get current buffer utilization for monitoring
+   */
+  getBufferUtilization(): number {
+    return (this.currentBufferSize / this.bufferSizeBytes) * 100;
+  }
+
+  /**
+   * Reset buffer (for testing)
+   */
+  resetBuffer(): void {
+    this.currentBufferSize = 0;
+    this.lastFlushTime = Date.now();
+  }
+
+  async runScheduledProcessing(): Promise<void> {
+    const startTime = Date.now();
+    const maxDuration = 25000;
+
+    try {
+      console.log("Running scheduled processing...");
+
+      // First flush all buffered messages
+      await this.autoFlushIfNeeded();
+
+      let processedCount = 0;
+      let errorCount = 0;
+
+      while (Date.now() - startTime < maxDuration) {
+        const stats = await this.getQueueStats();
+
+        if (stats.availableMessages === 0) {
+          console.log("No more available messages");
+          break;
+        }
+
+        const result = await this.pollHandler.handle(
+          {
+            limit: this.limits.maxBatchSize,
+            timeout: 5000,
+          },
+          Date.now()
+        );
+
+        if (!result.messages || result.messages.length === 0) {
+          break;
+        }
+
+        for (const message of result.messages) {
+          try {
+            await this.completeHandler.handle({ id: message.id }, Date.now());
+            processedCount++;
+          } catch (error) {
+            console.error(`Message ${message.id} failed:`, error);
+            await this.failHandler.handle(
+              {
+                id: message.id,
+                error:
+                  error instanceof Error ? error.message : "Processing error",
+              },
+              Date.now()
+            );
+            errorCount++;
+          }
+        }
+
+        if (Date.now() - startTime > maxDuration - 5000) {
+          break;
+        }
+      }
+
+      console.log(
+        `Processed: ${processedCount}, Errors: ${errorCount} in ${
+          Date.now() - startTime
+        }ms`
+      );
+    } catch (error) {
+      console.error("Scheduled processing error:", error);
+    }
   }
 }
 
@@ -223,6 +483,7 @@ export const createQueue = async (env: any): Promise<IQueue> => {
     maxQueueMemory: parseInt(env.MAX_QUEUE_MEMORY || "104857600"),
     maxRequestDuration: 25000,
     messageLoadLimit: parseInt(env.MESSAGE_LOAD_LIMIT || "100"),
+    bufferFlush: parseInt(env.BUFFER_FLUSH || "9"),
   };
 
   const storage = new R2StorageAdapter(env.STORAGE);

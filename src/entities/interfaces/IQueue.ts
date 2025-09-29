@@ -43,4 +43,5 @@ export interface IQueue {
   stopProcessing(id: string): Promise<void>;
   getQueueStats(): Promise<any>;
   forceReload(): Promise<void>;
+  runScheduledProcessing(): Promise<void>;
 }

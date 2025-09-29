@@ -23,7 +23,8 @@ export class MemoryManager implements IMemoryManager {
   }
 
   canAccommodate(size: number): boolean {
-    const canFit = this.memoryUsage + size <= this.limits.maxQueueMemory;
+    console.log("limits", this.limits.maxPayloadSize, size);
+    const canFit = size <= this.limits.maxPayloadSize;
     console.log(
       `Memory: Can accommodate ${size} bytes? ${canFit} (current: ${this.memoryUsage}, limit: ${this.limits.maxQueueMemory})`
     );

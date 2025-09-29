@@ -13,6 +13,8 @@ export type Environment = {
     MAX_RETRIES: string;
     RETRY_DELAY_MS: string;
     MESSAGE_LOAD_LIMIT: string;
+    MAX_MESSAGE_SIZE: string;
+    BUFFER_FLUSH: string;
   };
 };
 
@@ -28,11 +30,22 @@ export interface Message {
 }
 
 export interface QueueLimits {
+  /**
+   * Default is 1kb size limit per message for maximum throubput
+   */
   maxPayloadSize: number;
   maxBatchSize: number;
+  /**
+   * maximum buffer size for in-memory messages before flushing.
+   */
   maxQueueMemory: number;
   maxRequestDuration: number;
   messageLoadLimit: number;
+  /**
+   * Flush buffer configuration, should be in 9s or below
+   * for default free cloudflare worker durable object
+   */
+  bufferFlush: number;
 }
 
 export interface QueueStats {

@@ -220,18 +220,12 @@ cd benchmark
 ```bash
 locust -f locustfile.py --headless -u 1000 -r 100 --run-time 1m --stop-timeout 30 --host https://cfw-poor-man-queue.<your-cloudflare-worker-handler>.workers.dev 
 ```
- result : 
- 
-| Type | Name | # reqs | # fails | Avg | Min | Max | Med | req/s | failures/s |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| POST | /publish | 105 | 0 (0.00%) | 1149 | 120 | 15996 | 310 | 0.00 | 0.00 |
-|  | Aggregated | 105 | 0 (0.00%) | 1149 | 120 | 15996 | 310 | 0.00 | 0.00 |
 
-### Expected Performance Benchmarks
+### Performance Benchmarks
 
 Based on Cloudflare's infrastructure, typical performance characteristics:
 
-- **Enqueue Latency**: <2-20ms (95th percentile)
+- **Enqueue Latency**: <2-20ms (95th percentile), 100ms-300ms durning buffer flush ( brief )
 - **Dequeue Latency**: <5ms (95th percentile) 
 - **Throughput**: 1,000+ messages/second 
 - **Memory Efficiency**: Automatic R2 overflow for large payloads

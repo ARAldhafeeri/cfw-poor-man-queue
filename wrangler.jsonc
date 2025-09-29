@@ -33,9 +33,10 @@
 		"API_KEY": "your-secret-api-key",
 		"MAX_RETRIES": "3",
 		"RETRY_DELAY_MS": "60000",
-		"MAX_PAYLOAD_SIZE": "104857600",
-		"MAX_BATCH_SIZE": "50",
-		"MAX_QUEUE_MEMORY": "67108864",
+		"MAX_PAYLOAD_SIZE": "1024", // 1kb 
+		"MAX_BATCH_SIZE": "64000", // no. messages per batch messured by publisher queue buffer size / 1000, given 1kb applies
+		"MAX_QUEUE_MEMORY": "64000000", // 64mb
+		"BUFFER_FLUSH": "9", // flush buffer before hibernation 9s
 		"MESSAGE_LOAD_LIMIT": "100",
 	},
   "migrations": [
