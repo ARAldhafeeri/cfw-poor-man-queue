@@ -209,22 +209,23 @@ Update the `API_KEY` in the test script and set your worker URL.
 
 3. **Run Performance Tests**:
 
-Result : Overall the queue handled spike of users up to 200-1000 concurrent users very well, there is spike of latency but it goes back to optimal 1-20 ms very fast. Therefore the throughput of this queue is excellent. 
 
 <img src="./benchmark/result.png" wdith="600" height="600" >
 
-Recommendation : Do it in dev environmenet 
 
 ```bash
 cd benchmark 
 ```
 
 ```bash
-locust
+locust -f locustfile.py --headless -u 1000 -r 100 --run-time 1m --stop-timeout 30 --host https://cfw-poor-man-queue.<your-cloudflare-worker-handler>.workers.dev 
 ```
-1. This will run locust in your browser   http://localhost:8089 increase load progressivly
-2. update host to production or dev .
-
+ result : 
+ 
+| Type | Name | # reqs | # fails | Avg | Min | Max | Med | req/s | failures/s |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| POST | /publish | 105 | 0 (0.00%) | 1149 | 120 | 15996 | 310 | 0.00 | 0.00 |
+|  | Aggregated | 105 | 0 (0.00%) | 1149 | 120 | 15996 | 310 | 0.00 | 0.00 |
 
 ### Expected Performance Benchmarks
 
