@@ -64,10 +64,6 @@ export class PublishHandler implements IRequestHandler {
 
       this.queue.addMessage(message);
 
-      this.dependencies.messageRepository
-        .saveMessage(message)
-        .catch((err) => console.error("Save message metadata error:", err));
-
       if (
         Date.now() - startTime >
         this.dependencies.limits.maxRequestDuration - 2000

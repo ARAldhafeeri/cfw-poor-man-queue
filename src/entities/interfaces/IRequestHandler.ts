@@ -2,12 +2,7 @@ import { Message } from "entities/domain/queue";
 import { HonoRequest } from "hono";
 
 export interface FailedResponse {
-  notFound?: boolean;
-  deadLetter?: boolean;
-  finalAttempt?: number;
-  nextRetry?: number; // some time in the future in milliseconds
-  retry?: boolean;
-  attempt?: number;
+  count: number;
 }
 
 export interface CompleteResponse {
@@ -35,4 +30,8 @@ export interface IRequestHandler {
   ): Promise<
     FailedResponse | CompleteResponse | PublishResponse | PoolResponse
   >;
+}
+
+export interface IErrorHandler {
+  handle(data: any, message: string): Promise<FailedResponse>;
 }

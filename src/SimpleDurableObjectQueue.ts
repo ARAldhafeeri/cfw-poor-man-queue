@@ -50,12 +50,6 @@ export class SimpleDurableObjectQueue extends DurableObject {
     return this.queue?.publishHandler.handle(data, Date.now());
   }
 
-  /**
-   * Poll messages (automatically flushes buffer first)
-   */
-  async poll(options: { limit: number; timeout: number }): Promise<any> {
-    return this.queue?.pollHandler.handle(options, Date.now());
-  }
 
   async complete(data: { messageId: string }): Promise<any> {
     return this.queue?.completeHandler.handle(

@@ -5,4 +5,6 @@ export interface IMessageRepository {
   saveMessagesBatch(message: Message[]): Promise<void>;
   deleteMessage(messageId: string): Promise<void>;
   moveToDLQ(message: Message, error: string): Promise<void>;
+  popBatch(): Promise<Message[]>;
+  requeueMessage(message: Message): Promise<void>;
 }

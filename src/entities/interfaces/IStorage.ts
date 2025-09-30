@@ -4,5 +4,6 @@ export interface IStorage {
   delete(key: string): Promise<void>;
   list(options: {
     prefix: string;
+    limit?: number;
   }): Promise<{ objects: Array<{ key: string }> }>;
 }

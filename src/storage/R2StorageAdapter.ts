@@ -17,7 +17,16 @@ export class R2StorageAdapter implements IStorage {
 
   async list(options: {
     prefix: string;
+    limit?: number;
   }): Promise<{ objects: Array<{ key: string }> }> {
-    return await this.r2Bucket.list(options);
+    // return with limits
+    if (options.limit && typeof options.limit === "number") {
+      return this.r2Bucket.list({
+        prefix: options.prefix,
+        limit: options.limit,
+      });
+    }
+    // return all
+    return this.r2Bucket.list(options);
   }
 }

@@ -46,6 +46,11 @@ export interface QueueLimits {
    * for default free cloudflare worker durable object
    */
   bufferFlush: number;
+  /**
+   * Retry paramaters
+   */
+  maxRetry: number;
+  retryDelay: number;
 }
 
 export interface QueueStats {

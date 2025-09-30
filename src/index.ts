@@ -106,7 +106,10 @@ export default {
   ) => {
     const queueDO = await getQueue(env);
     console.log("scheduler run");
-    ctx.waitUntil((queueDO as any).runScheduledProcessing());
+    // Your custom handler for queue messages batch
+    const handler = (messages: Messages) => {};
+
+    ctx.waitUntil((queueDO as any).runScheduledProcessing(handler));
   },
 };
 

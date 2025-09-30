@@ -4,12 +4,9 @@ import { IPayloadStorage } from "./IPayloadStorage";
 import { IMessageRepository } from "./IMessageRepository";
 import { IMemoryManager } from "./IMemoryManager";
 import { IRetryStrategy } from "./IRetryStrategy";
-import { IBatchProcessor } from "./IBatchProcessor";
 import { QueueStatsService } from "services/QueueStatsService";
-import { PublishHandler } from "handlers.ts/PublishHandler";
-import { PollHandler } from "handlers.ts/PollHandler";
-import { CompleteHandler } from "handlers.ts/CompleteHandler";
-import { FailHandler } from "handlers.ts/FailHandler";
+import { PublishHandler } from "handlers/PublishHandler";
+import { FailHandler } from "handlers/FailHandler";
 
 /**
  * Queue - The Core Domain/Service Class
@@ -29,17 +26,14 @@ export interface IQueue {
 
   // Handlers
   publishHandler: PublishHandler;
-  pollHandler: PollHandler;
-  completeHandler: CompleteHandler;
   failHandler: FailHandler;
 
   getMessages(): Promise<Message[]>;
-  getProcessing(): Promise<Set<string>>;
   addMessage(message: Message): Promise<void>;
   removeMessage(id: string): Promise<boolean>;
-  startProcessing(id: string): Promise<void>;
-  stopProcessing(id: string): Promise<void>;
   getQueueStats(): Promise<any>;
   forceReload(): Promise<void>;
-  runScheduledProcessing(): Promise<void>;
+  runScheduledProcessing(
+    handler: (messages: Message[]) => Promise<void> | void
+  ): Promise<void>;
 }

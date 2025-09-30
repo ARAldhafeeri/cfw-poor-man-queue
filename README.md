@@ -191,6 +191,44 @@ For direct HTTP integration without the client library:
 - `GET /health` - Health check
 - `GET /stats` - Queue statistics
 
+## Handle messages 
+
+This is not regular queue with consumer/publisher, you need to write custom logic in index.ts 
+
+The logic will be run at every tick you configure using cron configuration `wrangler.jsonc`.
+```
+	"triggers": {
+		"crons": [
+			"* * * * *"
+		]
+	},
+```
+Updte `src/index.ts` with your customer handler here is an example :
+```Typescript 
+// rest of hono app
+export default {
+  fetch: app.fetch,
+
+  // Scheduled handler - calls DO method directly
+  scheduled: async (
+    event: ScheduledEvent,
+    env: Environment,
+    ctx: ExecutionContext
+  ) => {
+    const queueDO = await getQueue(env);
+    console.log("scheduler run");
+    // Your custom handler for queue messages batch
+    const handler = (messages: Messages) => {
+      // some logic could be as simple as hitting a rest api
+      // with retry logic ( like upstash qstash product)
+    };
+
+    ctx.waitUntil((queueDO as any).runScheduledProcessing(handler));
+  },
+};
+
+```
+
 See `postman.json` for complete API documentation and examples.
 
 ## Benchmarking & Load Testing

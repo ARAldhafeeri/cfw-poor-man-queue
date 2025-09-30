@@ -10,7 +10,7 @@ export class MessageRepository implements IMessageRepository {
 
   async loadMessages(limit: number): Promise<Message[]> {
     try {
-      const objects = await this.storage.list({ prefix: "wal/" });
+      const objects = await this.storage.list({ prefix: "wal/", limit: limit });
       const messages = await Promise.all(
         objects.objects.slice(0, limit).map(async (obj) => {
           try {
@@ -64,4 +64,69 @@ export class MessageRepository implements IMessageRepository {
       JSON.stringify(dlqMessage)
     );
   }
+
+  /**
+   * Pop an entire batch from the WAL (FIFO queue behavior)
+   * Returns all messages from the oldest batch and removes it from storage
+   */
+  async popBatch(): Promise<Message[]> {
+    try {
+      const objects = await this.storage.list({
+        prefix: "wal/",
+        limit: 1,
+      });
+
+      if (objects.objects.length === 0) {
+        return []; // Queue is empty
+      }
+
+      const oldestBatch = objects.objects[0];
+      const content = await this.storage.get(oldestBatch.key);
+
+      if (!content) {
+        return [];
+      }
+
+      const batchData = JSON.parse(await content.text());
+
+      // Delete the batch from storage
+      await this.storage.delete(oldestBatch.key);
+
+      // Return all messages from the batch
+      if (batchData.messages && Array.isArray(batchData.messages)) {
+        return batchData.messages;
+      }
+
+      // If it's a single message (not in batch format), wrap it in array
+      return [batchData as Message];
+    } catch (error) {
+      console.error("Pop batch error:", error);
+      return [];
+    }
+  }
+
+  /**
+   * Requeue a message for retry with updated retry information
+   */
+  async requeueMessage(message: Message): Promise<void> {
+    try {
+      // Save as a single-message batch with timestamp ensuring it's processed later
+      const retryTimestamp = Date.now();
+      const batchKey = `wal/batch_${retryTimestamp}_retry_${message.id}.json`;
+
+      const batchData = {
+        batchId: batchKey,
+        timestamp: retryTimestamp,
+        messageCount: 1,
+        messages: [message],
+        isRetryBatch: true,
+      };
+
+      await this.storage.put(batchKey, batchData);
+    } catch (error) {
+      console.error(`Failed to requeue message ${message.id}:`, error);
+      throw error;
+    }
+  }
+  
 }
