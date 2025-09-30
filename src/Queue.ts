@@ -309,15 +309,11 @@ export class Queue implements IQueue {
       let errorCount = 0;
       let retriedCount = 0;
 
-      // Process batches until we run out of time
-      while (Date.now() - startTime < maxDuration - 2000) {
-        // Leave 2s buffer
+      // Process batches for max duration which is 25s
+      // for cloudflare free plan
+      setTimeout(async () => {
+        // Get messages batches
         const messages = await this.messageRepository.popBatch();
-
-        if (messages.length === 0) {
-          console.log("No more batches to process");
-          break;
-        }
 
         console.log(`Processing batch of ${messages.length} messages`);
 
@@ -357,13 +353,7 @@ export class Queue implements IQueue {
         });
 
         await Promise.allSettled(messagePromises);
-
-        // Check if we're running out of time
-        if (Date.now() - startTime >= maxDuration - 2000) {
-          console.log("Approaching time limit, stopping processing");
-          break;
-        }
-      }
+      }, maxDuration);
 
       const duration = Date.now() - startTime;
       console.log(
