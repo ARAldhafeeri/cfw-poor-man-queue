@@ -10,7 +10,6 @@ export class PollHandler implements IRequestHandler {
   constructor(
     private queue: IQueue,
     private dependencies: {
-      batchProcessor: BatchProcessor;
       limits: QueueLimits;
     }
   ) {}
@@ -26,11 +25,7 @@ export class PollHandler implements IRequestHandler {
 
     if (!availableMessages.length) return { messages: [] };
 
-    const batchMessages = await this.dependencies.batchProcessor.createBatch(
-      availableMessages,
-      this.dependencies.limits,
-      startTime
-    );
+    const batchMessages = availableMessages;
 
     for (const message of batchMessages) {
       await this.queue.startProcessing(message.id);

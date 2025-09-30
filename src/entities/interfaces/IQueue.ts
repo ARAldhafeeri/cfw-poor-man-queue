@@ -25,7 +25,6 @@ export interface IQueue {
   messageRepository: IMessageRepository;
   memoryManager: IMemoryManager;
   retryStrategy: IRetryStrategy;
-  batchProcessor: IBatchProcessor;
   statsService: QueueStatsService;
 
   // Handlers
@@ -38,7 +37,6 @@ export interface IQueue {
   getProcessing(): Promise<Set<string>>;
   addMessage(message: Message): Promise<void>;
   removeMessage(id: string): Promise<boolean>;
-  updateMessage(message: Message): Promise<void>;
   startProcessing(id: string): Promise<void>;
   stopProcessing(id: string): Promise<void>;
   getQueueStats(): Promise<any>;

@@ -3,7 +3,7 @@ import { IStorage } from "entities/interfaces/IStorage";
 export class R2StorageAdapter implements IStorage {
   constructor(private r2Bucket: R2Bucket) {}
 
-  async put(key: string, value: string): Promise<void> {
+  async put(key: string, value: any): Promise<void> {
     await this.r2Bucket.put(key, value);
   }
 

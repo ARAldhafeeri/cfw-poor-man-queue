@@ -38,7 +38,6 @@ export class Queue implements IQueue {
     public messageRepository: IMessageRepository,
     public memoryManager: IMemoryManager,
     public retryStrategy: IRetryStrategy,
-    public batchProcessor: IBatchProcessor,
     public statsService: QueueStatsService,
     public publishHandler: PublishHandler,
     public pollHandler: PollHandler,
@@ -137,42 +136,20 @@ export class Queue implements IQueue {
     );
 
     try {
+      const timestamp = Date.now();
+      const messagesLength = this.messages.length;
+
       // Create batches of up to 64MB each
-      const batches = this.createBatches(this.messages, 64 * 1024 * 1024);
-      console.log(`Created ${batches.length} batches for flushing`);
+      await this.messageRepository.saveMessagesBatch(this.messages);
 
-      // Save each batch as a single R2 object
-      for (let i = 0; i < batches.length; i++) {
-        const batch = batches[i];
-        const batchKey = `wal/batch_${Date.now()}_${i}.json`;
-
-        const batchData = {
-          batchId: batchKey,
-          timestamp: Date.now(),
-          messageCount: batch.messages.length,
-          totalSize: batch.totalSize,
-          messages: batch.messages,
-        };
-
-        await this.storage.put(batchKey, JSON.stringify(batchData));
-        console.log(
-          `Saved batch ${batchKey} with ${batch.messages.length} messages`
-        );
-      }
-
-      // Now save individual messages for normal operations
-      // This can be done in parallel for better performance
-      const savePromises = this.messages.map((message) =>
-        this.messageRepository.saveMessage(message)
-      );
-      await Promise.all(savePromises);
+      console.log(`Created ${messagesLength} batches for flushing`);
 
       // Reset buffer state
       this.currentBufferSize = 0;
       this.lastFlushTime = Date.now();
-
+      const duration = Date.now() - timestamp;
       console.log(
-        `Successfully flushed ${this.messages.length} messages in ${batches.length} batches`
+        `Successfully flushed ${this.messages.length} messages in ${messagesLength} batches. In ${duration} ms`
       );
 
       // clear messages
@@ -181,51 +158,6 @@ export class Queue implements IQueue {
       console.error(`Failed to flush buffer to R2:`, error);
       throw error;
     }
-  }
-
-  /**
-   * Create batches of messages where each batch is <= maxBatchSizeBytes
-   */
-  private createBatches(
-    messages: Message[],
-    maxBatchSizeBytes: number
-  ): Array<{
-    messages: Message[];
-    totalSize: number;
-  }> {
-    const batches: Array<{ messages: Message[]; totalSize: number }> = [];
-    let currentBatch: Message[] = [];
-    let currentBatchSize = 0;
-
-    for (const message of messages) {
-      const messageSize = message.size || 1024;
-
-      // If adding this message would exceed batch size, start new batch
-      if (
-        currentBatchSize + messageSize > maxBatchSizeBytes &&
-        currentBatch.length > 0
-      ) {
-        batches.push({
-          messages: [...currentBatch],
-          totalSize: currentBatchSize,
-        });
-        currentBatch = [];
-        currentBatchSize = 0;
-      }
-
-      currentBatch.push(message);
-      currentBatchSize += messageSize;
-    }
-
-    // Don't forget the last batch
-    if (currentBatch.length > 0) {
-      batches.push({
-        messages: currentBatch,
-        totalSize: currentBatchSize,
-      });
-    }
-
-    return batches;
   }
 
   /**
@@ -295,32 +227,6 @@ export class Queue implements IQueue {
       `Message ${messageId} removed. Buffer size: ${this.currentBufferSize} bytes`
     );
     return true;
-  }
-
-  /**
-   * Synchronized method to update a message
-   */
-  async updateMessage(message: Message): Promise<void> {
-    const index = this.messages.findIndex((msg) => msg.id === message.id);
-    if (index === -1) {
-      console.warn(`Message ${message.id} not found for update`);
-      return;
-    }
-
-    const oldMessage = this.messages[index];
-    const oldSize = oldMessage.size || 1024;
-    const newSize = message.size || 1024;
-
-    // Update buffer size if message size changed
-    if (oldSize !== newSize) {
-      this.currentBufferSize = this.currentBufferSize - oldSize + newSize;
-    }
-
-    this.messages[index] = { ...message };
-    await this.messageRepository.saveMessage(message);
-    console.log(
-      `Message ${message.id} updated. Buffer size: ${this.currentBufferSize} bytes`
-    );
   }
 
   /**
@@ -420,13 +326,6 @@ export class Queue implements IQueue {
       let errorCount = 0;
 
       while (Date.now() - startTime < maxDuration) {
-        const stats = await this.getQueueStats();
-
-        if (stats.availableMessages === 0) {
-          console.log("No more available messages");
-          break;
-        }
-
         const result = await this.pollHandler.handle(
           {
             limit: this.limits.maxBatchSize,
@@ -438,6 +337,8 @@ export class Queue implements IQueue {
         if (!result.messages || result.messages.length === 0) {
           break;
         }
+
+        const compeletePromises = result.messages.map(async (message) => {});
 
         for (const message of result.messages) {
           try {
@@ -492,7 +393,6 @@ export const createQueue = async (env: any): Promise<IQueue> => {
 
   const memoryManager = new MemoryManager(limits);
   const retryStrategy = new ExponentialBackoffStrategy();
-  const batchProcessor = new BatchProcessor(payloadStorage);
 
   const queue = new Queue(
     env,
@@ -501,7 +401,6 @@ export const createQueue = async (env: any): Promise<IQueue> => {
     messageRepository,
     memoryManager,
     retryStrategy,
-    batchProcessor,
     null as any,
     null as any,
     null as any,
@@ -519,7 +418,6 @@ export const createQueue = async (env: any): Promise<IQueue> => {
   });
 
   const pollHandler = new PollHandler(queue, {
-    batchProcessor: batchProcessor,
     limits: limits,
   });
 

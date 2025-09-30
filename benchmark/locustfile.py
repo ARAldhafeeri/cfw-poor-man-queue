@@ -73,4 +73,3 @@ class SimpleQueueTest(HttpUser):
 #             else:
 #                 response.failure(f"HTTP {response.status_code}")
 
-

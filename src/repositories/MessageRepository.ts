@@ -10,9 +10,9 @@ export class MessageRepository implements IMessageRepository {
 
   async loadMessages(limit: number): Promise<Message[]> {
     try {
-      const objects = await this.storage.list({ prefix: "messages/" });
+      const objects = await this.storage.list({ prefix: "wal/" });
       const messages = await Promise.all(
-        objects.objects.slice(0, 1000).map(async (obj) => {
+        objects.objects.slice(0, limit).map(async (obj) => {
           try {
             const content = await this.storage.get(obj.key);
             if (content) {
@@ -32,21 +32,18 @@ export class MessageRepository implements IMessageRepository {
     }
   }
 
-  async saveMessage(message: Message): Promise<void> {
-    const metadata = {
-      id: message.id,
-      retries: message.retries,
-      nextRetry: message.nextRetry,
-      createdAt: message.createdAt,
-      size: message.size,
-      isLarge: message.isLarge,
-      data: message.isLarge ? null : message.data,
+  async saveMessagesBatch(messages: Message[]): Promise<void> {
+    const timestamp = Date.now();
+    const batchKey = `wal/batch_${timestamp}.json`;
+
+    const batchData = {
+      batchId: batchKey,
+      timestamp: timestamp,
+      messageCount: messages.length,
+      messages: messages,
     };
 
-    await this.storage.put(
-      `messages/${message.id}.json`,
-      JSON.stringify(metadata)
-    );
+    await this.storage.put(batchKey, batchData);
   }
 
   async deleteMessage(messageId: string): Promise<void> {
