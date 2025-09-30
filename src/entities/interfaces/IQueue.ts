@@ -28,7 +28,8 @@ export interface IQueue {
   publishHandler: PublishHandler;
   failHandler: FailHandler;
 
-  getMessages(): Promise<Message[]>;
+  // return poll of batches
+  getPoll(limit: number, timeout: number): Promise<Message[]>;
   addMessage(message: Message): Promise<void>;
   removeMessage(id: string): Promise<boolean>;
   getQueueStats(): Promise<any>;

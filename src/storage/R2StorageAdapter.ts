@@ -27,6 +27,6 @@ export class R2StorageAdapter implements IStorage {
       });
     }
     // return all
-    return this.r2Bucket.list(options);
+    return this.r2Bucket.list({ prefix: options.prefix });
   }
 }

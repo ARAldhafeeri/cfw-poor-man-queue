@@ -1,6 +1,6 @@
 import { Queue, createQueue } from "Queue";
 import { DurableObject } from "cloudflare:workers";
-import { Environment } from "entities/domain/queue";
+import { Environment, Message } from "entities/domain/queue";
 import { IQueue } from "entities/interfaces/IQueue";
 
 /**
@@ -50,19 +50,18 @@ export class SimpleDurableObjectQueue extends DurableObject {
     return this.queue?.publishHandler.handle(data, Date.now());
   }
 
-
-  async complete(data: { messageId: string }): Promise<any> {
-    return this.queue?.completeHandler.handle(
-      { id: data.messageId },
-      Date.now()
-    );
+  async fail(data: any, error: string): Promise<any> {
+    return this.queue?.failHandler.handle(data, error);
   }
 
-  async fail(data: { messageId: string; error: string }): Promise<any> {
-    return this.queue?.failHandler.handle(
-      { id: data.messageId, error: data.error },
-      Date.now()
-    );
+  async poll(options: {
+    limit: number;
+    timeout: number;
+  }): Promise<{ messages: Message[] | [] }> {
+    return {
+      messages:
+        (await this.queue?.getPoll(options.limit, options.timeout)) || [],
+    };
   }
 
   /**
@@ -75,8 +74,10 @@ export class SimpleDurableObjectQueue extends DurableObject {
   /**
    * Run schedule ( pooling consumtion of messages)
    */
-  async runScheduledProcessing(): Promise<void> {
-    await this.queue?.runScheduledProcessing();
+  async runScheduledProcessing(
+    handler: (messages: Message[]) => Promise<void> | void
+  ): Promise<void> {
+    await this.queue?.runScheduledProcessing(handler);
   }
   /**
    * Health check including buffer health

@@ -40,14 +40,6 @@ app.get("/poll", async (c: Context) => {
   return c.json(result);
 });
 
-app.post("/complete", async (c: Context) => {
-  const queueDO = await getQueue(c.env);
-  const { messageId } = await c.req.json();
-
-  const result = await (queueDO as any).complete({ messageId });
-  return c.json(result);
-});
-
 app.post("/fail", async (c: Context) => {
   const queueDO = await getQueue(c.env);
   const { messageId, error } = await c.req.json();

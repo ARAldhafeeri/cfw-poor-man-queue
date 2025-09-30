@@ -8,27 +8,32 @@ export class MessageRepository implements IMessageRepository {
     private payloadCalculator: (data: any) => number
   ) {}
 
-  async loadMessages(limit: number): Promise<Message[]> {
+  async loadMessages(limit: number): Promise<{ messages: Message[] }> {
+    console.log("limit", limit);
     try {
       const objects = await this.storage.list({ prefix: "wal/", limit: limit });
-      const messages = await Promise.all(
+
+      const batchResults = await Promise.all(
         objects.objects.slice(0, limit).map(async (obj) => {
           try {
             const content = await this.storage.get(obj.key);
             if (content) {
-              return JSON.parse(await content.text()) as Message;
+              const batchData = JSON.parse(await content.text());
+              // Return the messages array from the batch, not the whole batch object
+              return batchData.messages || [];
             }
           } catch (error) {
             console.error(`Failed to load message ${obj.key}:`, error);
           }
-          return null;
+          return []; // Return empty array on error
         })
       );
 
-      return messages.filter(Boolean) as Message[];
+      const allMessages = batchResults.flat();
+      return { messages: allMessages };
     } catch (error) {
       console.error("Load messages error:", error);
-      return [];
+      return { messages: [] };
     }
   }
 
@@ -43,8 +48,10 @@ export class MessageRepository implements IMessageRepository {
       messages: messages,
     };
 
-    await this.storage.put(batchKey, batchData);
+    await this.storage.put(batchKey, JSON.stringify(batchData));
   }
+
+  // TODO delete batch
 
   async deleteMessage(messageId: string): Promise<void> {
     await this.storage.delete(`messages/${messageId}.json`);
@@ -128,5 +135,4 @@ export class MessageRepository implements IMessageRepository {
       throw error;
     }
   }
-  
 }

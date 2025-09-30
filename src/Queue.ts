@@ -173,15 +173,15 @@ export class Queue implements IQueue {
   }
 
   /**
-   * Load messages and synchronize in-memory state
+   * Load messages
    */
   private async loadMessages(): Promise<void> {
     try {
       console.log("Loading messages from storage...");
-      const messages = await this.messageRepository.loadMessages(
+      const loaded = await this.messageRepository.loadMessages(
         this.limits.messageLoadLimit
       );
-      this.messages = [...messages];
+      this.messages = [...loaded.messages];
       this.processing.clear();
 
       // Recalculate buffer size from loaded messages
@@ -230,8 +230,16 @@ export class Queue implements IQueue {
   /**
    * Get messages
    */
-  async getMessages(): Promise<Message[]> {
-    return this.messages;
+  async getPoll(limit: number, timeout: number): Promise<Message[]> {
+    const loadPromise = this.messageRepository.loadMessages(limit);
+    const timeoutPromise = new Promise<Message[]>((resolve) =>
+      setTimeout(() => resolve([]), timeout)
+    );
+
+    return Promise.race([
+      loadPromise.then((result) => result.messages),
+      timeoutPromise,
+    ]);
   }
 
   async getQueueStats(): Promise<any> {
