@@ -264,9 +264,8 @@ locust -f locustfile.py --headless -u 1000 -r 100 --run-time 1m --stop-timeout 3
 Based on Cloudflare's infrastructure, typical performance characteristics:
 
 - **Enqueue Latency**: <2-20ms (95th percentile), 100ms-300ms durning buffer flush ( brief )
-- **Dequeue Latency**: <5ms (95th percentile) 
-- **Throughput**: 1,000+ messages/second 
-- **Memory Efficiency**: Automatic R2 overflow for large payloads
+- **Throughput**: 12k messages/minute 
+- **Memory Efficiency**: Automatic R2 overflow for large ( effcient write-ahead log )
 - **Availability**: 99.9%+ uptime with global failover
 
 
