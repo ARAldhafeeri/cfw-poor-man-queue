@@ -1,5 +1,5 @@
-import { Message } from "entities/domain/queue";
-import { IRetryStrategy } from "entities/interfaces/IRetryStrategy";
+import { Message } from "../entities/domain/queue";
+import { IRetryStrategy } from "../entities/interfaces/IRetryStrategy";
 
 export class ExponentialBackoffStrategy implements IRetryStrategy {
   shouldRetry(message: Message, maxRetries: number): boolean {

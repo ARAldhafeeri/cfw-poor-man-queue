@@ -1,5 +1,5 @@
-import { IPayloadStorage } from "entities/interfaces/IPayloadStorage";
-import { IStorage } from "entities/interfaces/IStorage";
+import { IPayloadStorage } from "../entities/interfaces/IPayloadStorage";
+import { IStorage } from "../entities/interfaces/IStorage";
 
 export class PayloadStorage implements IPayloadStorage {
   constructor(private storage: IStorage) {}

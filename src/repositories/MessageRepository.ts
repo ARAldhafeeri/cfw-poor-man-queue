@@ -1,22 +1,28 @@
-import { Message } from "entities/domain/queue";
-import { IMessageRepository } from "entities/interfaces/IMessageRepository";
-import { IStorage } from "entities/interfaces/IStorage";
+import { Message } from "../entities/domain/queue";
+import { IMessageRepository } from "../entities/interfaces/IMessageRepository";
+import { IStorage } from "../entities/interfaces/IStorage";
 
 export class MessageRepository implements IMessageRepository {
   constructor(
-    private storage: IStorage,
-    private payloadCalculator: (data: any) => number
+    private dependencies: {
+      storage: IStorage;
+      walStorageName: string;
+      deadLetterQueueName: string;
+    }
   ) {}
 
   async loadMessages(limit: number): Promise<{ messages: Message[] }> {
     console.log("limit", limit);
     try {
-      const objects = await this.storage.list({ prefix: "wal/", limit: limit });
+      const objects = await this.dependencies.storage.list({
+        prefix: this.dependencies.walStorageName,
+        limit: limit,
+      });
 
       const batchResults = await Promise.all(
         objects.objects.slice(0, limit).map(async (obj) => {
           try {
-            const content = await this.storage.get(obj.key);
+            const content = await this.dependencies.storage.get(obj.key);
             if (content) {
               const batchData = JSON.parse(await content.text());
               // Return the messages array from the batch, not the whole batch object
@@ -39,7 +45,7 @@ export class MessageRepository implements IMessageRepository {
 
   async saveMessagesBatch(messages: Message[]): Promise<void> {
     const timestamp = Date.now();
-    const batchKey = `wal/batch_${timestamp}.json`;
+    const batchKey = `${this.dependencies.walStorageName}/batch_${timestamp}.json`;
 
     const batchData = {
       batchId: batchKey,
@@ -48,13 +54,13 @@ export class MessageRepository implements IMessageRepository {
       messages: messages,
     };
 
-    await this.storage.put(batchKey, JSON.stringify(batchData));
+    await this.dependencies.storage.put(batchKey, JSON.stringify(batchData));
   }
 
   // TODO delete batch
 
   async deleteMessage(messageId: string): Promise<void> {
-    await this.storage.delete(`messages/${messageId}.json`);
+    await this.dependencies.storage.delete(`messages/${messageId}.json`);
   }
 
   async moveToDLQ(message: Message, error: string): Promise<void> {
@@ -66,10 +72,45 @@ export class MessageRepository implements IMessageRepository {
         ? `[Large payload stored separately: payloads/${message.id}.json]`
         : message.data,
     };
-    await this.storage.put(
-      `dlq/${message.id}.json`,
+    await this.dependencies.storage.put(
+      `${this.dependencies.deadLetterQueueName}/${message.id}.json`,
       JSON.stringify(dlqMessage)
     );
+  }
+
+  /**
+   * Pop single message from dead letter queue
+   * TODO: maybe some piority stuff via meta data & r2-SQL
+   * As cloudflare recently added r2-SQL.
+   */
+  async popMessageFromDLQ(): Promise<Message | null> {
+    try {
+      const objects = await this.dependencies.storage.list({
+        prefix: this.dependencies.deadLetterQueueName,
+        limit: 1,
+      });
+
+      if (objects.objects.length === 0) {
+        return null; // Queue is empty
+      }
+
+      const oldestMessage = objects.objects[0];
+      const content = await this.dependencies.storage.get(oldestMessage.key);
+
+      if (!content) {
+        return null;
+      }
+
+      const message = JSON.parse(await content.text());
+
+      // Delete the batch from storage
+      await this.dependencies.storage.delete(oldestMessage.key);
+
+      return message;
+    } catch (error) {
+      console.error("Pop batch error:", error);
+      return null;
+    }
   }
 
   /**
@@ -78,7 +119,7 @@ export class MessageRepository implements IMessageRepository {
    */
   async popBatch(): Promise<Message[]> {
     try {
-      const objects = await this.storage.list({
+      const objects = await this.dependencies.storage.list({
         prefix: "wal/",
         limit: 1,
       });
@@ -88,7 +129,7 @@ export class MessageRepository implements IMessageRepository {
       }
 
       const oldestBatch = objects.objects[0];
-      const content = await this.storage.get(oldestBatch.key);
+      const content = await this.dependencies.storage.get(oldestBatch.key);
 
       if (!content) {
         return [];
@@ -97,7 +138,7 @@ export class MessageRepository implements IMessageRepository {
       const batchData = JSON.parse(await content.text());
 
       // Delete the batch from storage
-      await this.storage.delete(oldestBatch.key);
+      await this.dependencies.storage.delete(oldestBatch.key);
 
       // Return all messages from the batch
       if (batchData.messages && Array.isArray(batchData.messages)) {
@@ -129,7 +170,7 @@ export class MessageRepository implements IMessageRepository {
         isRetryBatch: true,
       };
 
-      await this.storage.put(batchKey, batchData);
+      await this.dependencies.storage.put(batchKey, batchData);
     } catch (error) {
       console.error(`Failed to requeue message ${message.id}:`, error);
       throw error;

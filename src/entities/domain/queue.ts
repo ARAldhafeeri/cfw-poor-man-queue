@@ -55,9 +55,7 @@ export interface QueueLimits {
 
 export interface QueueStats {
   total: number;
-  processing: number;
-  ready: number;
-  retrying: number;
+
   memoryUsage: number;
   memoryLimit: number;
   memoryUtilization: string;

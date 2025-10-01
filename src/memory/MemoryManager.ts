@@ -1,5 +1,5 @@
-import { Message, QueueLimits } from "entities/domain/queue";
-import { IMemoryManager } from "entities/interfaces/IMemoryManager";
+import { Message, QueueLimits } from "../entities/domain/queue";
+import { IMemoryManager } from "../entities/interfaces/IMemoryManager";
 
 export class MemoryManager implements IMemoryManager {
   private memoryUsage = 0;

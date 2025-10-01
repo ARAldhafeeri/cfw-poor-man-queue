@@ -1,16 +1,14 @@
-import { QueueLimits } from "client/types";
-import { Message } from "entities/domain/queue";
-import { IMessageRepository } from "entities/interfaces/IMessageRepository";
-import { IPayloadStorage } from "entities/interfaces/IPayloadStorage";
-import { IQueue } from "entities/interfaces/IQueue";
+import { QueueLimits } from "../entities/domain/queue";
+import { Message } from "../entities/domain/queue";
+import { IQueue } from "../entities/interfaces/IQueue";
 import {
   IRequestHandler,
   PublishResponse,
-} from "entities/interfaces/IRequestHandler";
-import { MemoryManager } from "memory/MemoryManager";
-import { calculateSize, isLargePayload } from "payload";
-import { MessageRepository } from "repositories/MessageRepository";
-import { PayloadStorage } from "storage/PayloadStorage";
+} from "../entities/interfaces/IRequestHandler";
+import { MemoryManager } from "../memory/MemoryManager";
+import { calculateSize, isLargePayload } from "../payload";
+import { MessageRepository } from "../repositories/MessageRepository";
+import { PayloadStorage } from "../storage/PayloadStorage";
 
 export class PublishHandler implements IRequestHandler {
   constructor(

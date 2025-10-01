@@ -1,18 +1,15 @@
-import { Message } from "entities/domain/queue";
-import { IMemoryManager } from "entities/interfaces/IMemoryManager";
-import { IMessageRepository } from "entities/interfaces/IMessageRepository";
-import { IPayloadStorage } from "entities/interfaces/IPayloadStorage";
-import { IQueue } from "entities/interfaces/IQueue";
+import { Message } from "../entities/domain/queue";
+import { IMemoryManager } from "../entities/interfaces/IMemoryManager";
+import { IMessageRepository } from "../entities/interfaces/IMessageRepository";
+import { IPayloadStorage } from "../entities/interfaces/IPayloadStorage";
 import {
   FailedResponse,
   IErrorHandler,
-  IRequestHandler,
-} from "entities/interfaces/IRequestHandler";
-import { IRetryStrategy } from "entities/interfaces/IRetryStrategy";
+} from "../entities/interfaces/IRequestHandler";
+import { IRetryStrategy } from "../entities/interfaces/IRetryStrategy";
 
 export class FailHandler implements IErrorHandler {
   constructor(
-    private queue: IQueue,
     private dependencies: {
       retryStrategy: IRetryStrategy;
       memoryManager: IMemoryManager;

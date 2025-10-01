@@ -1,4 +1,4 @@
-import { IStorage } from "entities/interfaces/IStorage";
+import { IStorage } from "../entities/interfaces/IStorage";
 
 export class R2StorageAdapter implements IStorage {
   constructor(private r2Bucket: R2Bucket) {}

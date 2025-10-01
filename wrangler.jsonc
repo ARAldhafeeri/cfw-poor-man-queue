@@ -30,14 +30,16 @@
 		]
 	},
 	"vars": {
-		"API_KEY": "your-secret-api-key",
-		"MAX_RETRIES": "3",
-		"RETRY_DELAY_MS": "6000",
+		"API_KEY": "your-secret-api-key", // api key used to interact with endpoints on the queue such as publish, stats. 
+		"MAX_RETRIES": "3", // max retry then message moved to dead letter queue which you need to build and handle
+		"RETRY_DELAY_MS": "6000", // exponential retry base delay
 		"MAX_PAYLOAD_SIZE": "1024", // 1kb 
 		"MAX_BATCH_SIZE": "64000", // no. messages per batch messured by publisher queue buffer size / 1000, given 1kb applies
 		"MAX_QUEUE_MEMORY": "64000000", // 64mb
 		"BUFFER_FLUSH": "9", // flush buffer before hibernation 9s
-		"MESSAGE_LOAD_LIMIT": "100",
+		"MESSAGE_LOAD_LIMIT": "100", // loaded messages for stats, batch. this number need to be set carefully depending on your message size 1kb, means you  can do 64mb 100 * 1kb is 100kb per batch, ber stats
+		"WAL_STORAGE_NAME": "wal_behavioral", // allow users to name the object in r2 for WAL
+		"DLQ_NAME": "dlq_behavioral",  // allow users to  name dlq object in r2
 	},
   "migrations": [
     {

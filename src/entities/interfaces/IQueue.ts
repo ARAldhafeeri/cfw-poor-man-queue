@@ -1,12 +1,10 @@
-import { Message } from "entities/domain/queue";
+import { Message } from "../domain/queue";
 import { IStorage } from "./IStorage";
 import { IPayloadStorage } from "./IPayloadStorage";
 import { IMessageRepository } from "./IMessageRepository";
 import { IMemoryManager } from "./IMemoryManager";
 import { IRetryStrategy } from "./IRetryStrategy";
-import { QueueStatsService } from "services/QueueStatsService";
-import { PublishHandler } from "handlers/PublishHandler";
-import { FailHandler } from "handlers/FailHandler";
+import { IRequestHandler, IErrorHandler } from "./IRequestHandler";
 
 /**
  * Queue - The Core Domain/Service Class
@@ -22,11 +20,11 @@ export interface IQueue {
   messageRepository: IMessageRepository;
   memoryManager: IMemoryManager;
   retryStrategy: IRetryStrategy;
-  statsService: QueueStatsService;
+  statsService: any;
 
   // Handlers
-  publishHandler: PublishHandler;
-  failHandler: FailHandler;
+  publishHandler: IRequestHandler;
+  failHandler: IErrorHandler;
 
   // return poll of batches
   getPoll(limit: number, timeout: number): Promise<Message[]>;

@@ -1,5 +1,4 @@
-import { Message } from "entities/domain/queue";
-import { HonoRequest } from "hono";
+import { Message } from "../domain/queue";
 
 export interface FailedResponse {
   count: number;
@@ -28,10 +27,28 @@ export interface IRequestHandler {
     data: any,
     startTime: number
   ): Promise<
-    FailedResponse | CompleteResponse | PublishResponse | PoolResponse
+    FailedResponse | CompleteResponse | PublishResponse | PoolResponse | void
   >;
 }
 
+/**
+ * Handles when tick logic or custom user IConsumeHandler fails.
+ * We use exponential backoff retry. When retry reached max ( which is configureable by user)
+ * The Queue will move the message to DEAD Latter Queue.
+ * ( which need to be implemented as stand alone with custom handler)
+ */
 export interface IErrorHandler {
   handle(data: any, message: string): Promise<FailedResponse>;
+}
+
+/**
+ * custom logic receive batch from WAL to consume messages.
+ * passed to run schedule in queue.
+ */
+export interface IConsumeHandler extends IRequestHandler {
+  handle(
+    messages: Message[]
+  ): Promise<
+    FailedResponse | CompleteResponse | PublishResponse | PoolResponse | void
+  >;
 }

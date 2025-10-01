@@ -1,11 +1,10 @@
-import { IMemoryManager } from "entities/interfaces/IMemoryManager";
+import { IMemoryManager } from "../entities/interfaces/IMemoryManager";
 import {
   HealthStatus,
-  Message,
   QueueLimits,
   QueueStats,
-} from "entities/domain/queue";
-import { IQueue } from "Queue";
+} from "../entities/domain/queue";
+import { IQueue } from "../entities/interfaces/IQueue";
 
 export class QueueStatsService {
   constructor(
@@ -15,21 +14,13 @@ export class QueueStatsService {
   ) {}
 
   async getStats(): Promise<QueueStats> {
-    const messages = await this.queue.getMessages();
-    const processing = await this.queue.getProcessing();
-    const now = Date.now();
+    const messages = await this.queue.getPoll(
+      this.limits.messageLoadLimit,
+      this.limits.maxRequestDuration
+    );
 
     return {
       total: messages.length,
-      processing: processing.size,
-      ready: messages.filter(
-        (message: Message) =>
-          !processing.has(message.id) && (message.nextRetry || 0) <= now
-      ).length,
-      retrying: messages.filter(
-        (message) =>
-          !processing.has(message.id) && (message.nextRetry || 0) > now
-      ).length,
       memoryUsage: this.memoryManager.getCurrentUsage(),
       memoryLimit: this.limits.maxQueueMemory,
       memoryUtilization: this.memoryManager.getUtilization().toFixed(2) + "%",
@@ -45,7 +36,10 @@ export class QueueStatsService {
   }
 
   async getHealth(): Promise<HealthStatus> {
-    const messages = await this.queue.getMessages();
+    const messages = await this.queue.getPoll(
+      this.limits.messageLoadLimit,
+      this.limits.maxRequestDuration
+    );
     const memoryOk = this.memoryManager.getUtilization() < 80;
     const queueOk = messages.length < 10000;
 

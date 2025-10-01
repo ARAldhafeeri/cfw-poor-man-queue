@@ -1,4 +1,4 @@
-import { Message } from "entities/domain/queue";
+import { Message } from "../domain/queue";
 
 export interface IMemoryManager {
   addMessage(message: Message): void;

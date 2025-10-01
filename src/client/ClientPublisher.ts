@@ -1,4 +1,4 @@
-import { calculateSize } from "payload";
+import { calculateSize } from "./payload";
 import {
   IClientConfiguration,
   IClientPublisher,
