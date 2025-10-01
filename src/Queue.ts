@@ -1,22 +1,18 @@
-import { BatchProcessor } from "batch/BatchProcessor";
-import { Message } from "entities/domain/queue";
-import { IBatchProcessor } from "entities/interfaces/IBatchProcessor";
-import { IMemoryManager } from "entities/interfaces/IMemoryManager";
-import { IMessageRepository } from "entities/interfaces/IMessageRepository";
-import { IPayloadStorage } from "entities/interfaces/IPayloadStorage";
-import { IRetryStrategy } from "entities/interfaces/IRetryStrategy";
-import { IStorage } from "entities/interfaces/IStorage";
-import { FailHandler } from "handlers/FailHandler";
-import { PublishHandler } from "handlers/PublishHandler";
-import { MemoryManager } from "memory/MemoryManager";
-import { calculateSize } from "payload";
-import { MessageRepository } from "repositories/MessageRepository";
-import { ExponentialBackoffStrategy } from "retry/ExponentialBackoffStrategy";
-import { QueueStatsService } from "services/QueueStatsService";
-import { PayloadStorage } from "storage/PayloadStorage";
-import { R2StorageAdapter } from "storage/R2StorageAdapter";
-import { QueueLimits } from "entities/domain/queue";
-import { IQueue } from "entities/interfaces/IQueue";
+import { IMemoryManager } from "./entities/interfaces/IMemoryManager";
+import { IMessageRepository } from "./entities/interfaces/IMessageRepository";
+import { IPayloadStorage } from "./entities/interfaces/IPayloadStorage";
+import { IRetryStrategy } from "./entities/interfaces/IRetryStrategy";
+import { IStorage } from "./entities/interfaces/IStorage";
+import { FailHandler } from "./handlers/FailHandler";
+import { PublishHandler } from "./handlers/PublishHandler";
+import { MemoryManager } from "./memory/MemoryManager";
+import { MessageRepository } from "./repositories/MessageRepository";
+import { ExponentialBackoffStrategy } from "./retry/ExponentialBackoffStrategy";
+import { QueueStatsService } from "./services/QueueStatsService";
+import { PayloadStorage } from "./storage/PayloadStorage";
+import { R2StorageAdapter } from "./storage/R2StorageAdapter";
+import { Message, QueueLimits } from "./entities/domain/queue";
+import { IQueue } from "./entities/interfaces/IQueue";
 export class Queue implements IQueue {
   private messages: Message[] = [];
   private processing = new Set<string>();
@@ -35,7 +31,6 @@ export class Queue implements IQueue {
     public messageRepository: IMessageRepository,
     public memoryManager: IMemoryManager,
     public retryStrategy: IRetryStrategy,
-    public batchProcessor: IBatchProcessor,
     public statsService: QueueStatsService,
     public publishHandler: PublishHandler,
     public failHandler: FailHandler
@@ -390,11 +385,22 @@ export const createQueue = async (env: any): Promise<IQueue> => {
 
   const storage = new R2StorageAdapter(env.STORAGE);
   const payloadStorage = new PayloadStorage(storage);
-  const messageRepository = new MessageRepository(storage, calculateSize);
+  const messageRepository = new MessageRepository({
+    storage: storage,
+    walStorageName: env.WAL_STORAGE_NAME,
+    deadLetterQueueName: env.DLQ_NAME,
+  });
 
   const memoryManager = new MemoryManager(limits);
   const retryStrategy = new ExponentialBackoffStrategy();
-  const batchProcessor = new BatchProcessor(payloadStorage);
+  const failHandler = new FailHandler({
+    retryStrategy: retryStrategy,
+    memoryManager: memoryManager,
+    payloadStorage: payloadStorage,
+    messageRepository: messageRepository,
+    maxRetries: parseInt(env.MAX_RETRIES || "3"),
+    retryDelay: parseInt(env.MAX_RETRIES || "3"),
+  });
 
   const queue = new Queue(
     env,
@@ -403,10 +409,9 @@ export const createQueue = async (env: any): Promise<IQueue> => {
     messageRepository,
     memoryManager,
     retryStrategy,
-    batchProcessor,
     null as any,
     null as any,
-    null as any
+    failHandler
   );
 
   const statsService = new QueueStatsService(queue, memoryManager, limits);
@@ -416,15 +421,6 @@ export const createQueue = async (env: any): Promise<IQueue> => {
     memoryManager: memoryManager,
     payloadStorage: payloadStorage,
     messageRepository: messageRepository,
-  });
-
-  const failHandler = new FailHandler(queue, {
-    retryStrategy: retryStrategy,
-    memoryManager: memoryManager,
-    payloadStorage: payloadStorage,
-    messageRepository: messageRepository,
-    maxRetries: parseInt(env.MAX_RETRIES || "3"),
-    retryDelay: parseInt(env.MAX_RETRIES || "3"),
   });
 
   queue.publishHandler = publishHandler;

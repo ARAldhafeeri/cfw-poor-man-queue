@@ -1,4 +1,4 @@
-import { QueueLimits } from "entities/domain/queue";
+import { QueueLimits } from "./entities/domain/queue";
 
 export function calculateSize(data: any): number {
   return new TextEncoder().encode(JSON.stringify(data)).length;

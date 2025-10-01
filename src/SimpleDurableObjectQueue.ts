@@ -1,7 +1,7 @@
-import { Queue, createQueue } from "Queue";
+import { createQueue } from "./Queue";
 import { DurableObject } from "cloudflare:workers";
-import { Environment, Message } from "entities/domain/queue";
-import { IQueue } from "entities/interfaces/IQueue";
+import { Environment, Message } from "./entities/domain/queue";
+import { IQueue } from "./entities/interfaces/IQueue";
 
 /**
  * Durable Object with optimized memory buffering
