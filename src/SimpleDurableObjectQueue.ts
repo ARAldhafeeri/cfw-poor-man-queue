@@ -2,6 +2,7 @@ import { createQueue } from "./Queue";
 import { DurableObject } from "cloudflare:workers";
 import { Environment, Message } from "./entities/domain/queue";
 import { IQueue } from "./entities/interfaces/IQueue";
+import { Status } from "./entities/interfaces/IRequestHandler";
 
 /**
  * Durable Object with optimized memory buffering
@@ -75,7 +76,7 @@ export class SimpleDurableObjectQueue extends DurableObject {
    * Run schedule ( pooling consumtion of messages)
    */
   async runScheduledProcessing(
-    handler: (messages: Message[]) => Promise<void> | void
+    handler: (messages: Message) => Promise<Status> | void
   ): Promise<void> {
     await this.queue?.runScheduledProcessing(handler);
   }

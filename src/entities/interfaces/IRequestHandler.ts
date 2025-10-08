@@ -1,4 +1,14 @@
 import { Message } from "../domain/queue";
+import { TemporalMessage } from "../../entities/domain/queue";
+
+export interface FailedResponse {
+  count: number;
+}
+
+export interface Status {
+  status: boolean;
+  error: string;
+}
 
 export interface FailedResponse {
   count: number;
@@ -27,7 +37,12 @@ export interface IRequestHandler {
     data: any,
     startTime: number
   ): Promise<
-    FailedResponse | CompleteResponse | PublishResponse | PoolResponse | void
+    | Status
+    | FailedResponse
+    | CompleteResponse
+    | PublishResponse
+    | PoolResponse
+    | void
   >;
 }
 
@@ -46,9 +61,13 @@ export interface IErrorHandler {
  * passed to run schedule in queue.
  */
 export interface IConsumeHandler extends IRequestHandler {
-  handle(
-    messages: Message[]
-  ): Promise<
-    FailedResponse | CompleteResponse | PublishResponse | PoolResponse | void
-  >;
+  handle(messages: Message[]): Promise<void>;
+}
+
+/**
+ * custom logic receive batch from WAL to consume messages.
+ * passed to run schedule in queue.
+ */
+export interface ITemporalQueueConsumeHandler extends IRequestHandler {
+  handle(batch: TemporalMessage): Promise<Status>;
 }

@@ -13,6 +13,8 @@ import { PayloadStorage } from "./storage/PayloadStorage";
 import { R2StorageAdapter } from "./storage/R2StorageAdapter";
 import { Message, QueueLimits } from "./entities/domain/queue";
 import { IQueue } from "./entities/interfaces/IQueue";
+import { Status } from "./entities/interfaces/IRequestHandler";
+
 export class Queue implements IQueue {
   private messages: Message[] = [];
   private processing = new Set<string>();
@@ -297,10 +299,10 @@ export class Queue implements IQueue {
   }
 
   async runScheduledProcessing(
-    handler: (messages: Message[]) => Promise<void> | void
+    handler: (messages: Message) => Promise<Status>
   ): Promise<void> {
     const startTime = Date.now();
-    const maxDuration = this.limits.maxRequestDuration; // 25000ms
+    const maxDuration = this.limits.maxRequestDuration || 25000; // 25000ms
 
     try {
       console.log("Running scheduled processing...");
@@ -314,7 +316,19 @@ export class Queue implements IQueue {
 
       // Process batches for max duration which is 25s
       // for cloudflare free plan
-      setTimeout(async () => {
+      // we want to create race condition between max request duration
+      // and the processing
+      let currentTimeout = null;
+      const timeoutPromise = new Promise((_, reject) => {
+        const timeout = setTimeout(() => {
+          reject(new Error("Processing terminated due to timeout"));
+        }, maxDuration);
+
+        // Store timeout so we can clear it later
+        currentTimeout = timeout;
+      });
+
+      const processABatch = async () => {
         // Get messages batches
         const messages = await this.messageRepository.popBatch();
 
@@ -332,9 +346,23 @@ export class Queue implements IQueue {
             }
 
             // Pass messages to custom handler
-            await handler(messages);
-
-            processedCount++;
+            const result = await handler(message);
+            // handle the new degrade gracefully logic
+            if (!result.status) {
+              try {
+                const currentRetries = (message.retries || 0) + 1;
+                const updatedMessage = {
+                  ...message,
+                  retries: currentRetries,
+                };
+                await this.failHandler.handle(updatedMessage, result.error);
+              } catch (e) {
+                console.log("Failure handler throws errors", e);
+              }
+              errorCount++;
+            } else {
+              processedCount++;
+            }
           } catch (error) {
             console.error(
               `Message ${message.id} failed (attempt ${
@@ -343,20 +371,19 @@ export class Queue implements IQueue {
               error
             );
 
-            // Initialize retries if not present
-            const currentRetries = (message.retries || 0) + 1;
-            const updatedMessage = {
-              ...message,
-              retries: currentRetries,
-            };
-
-            // Handle error with retry logic
-            this.failHandler.handle(updatedMessage, (error as any).msg);
+            // TODO: handle unexpected errors
           }
         });
 
         await Promise.allSettled(messagePromises);
-      }, maxDuration);
+      };
+
+      await Promise.race([timeoutPromise, processABatch()]);
+
+      if (currentTimeout) {
+        clearTimeout(currentTimeout);
+        currentTimeout = null;
+      }
 
       const duration = Date.now() - startTime;
       console.log(

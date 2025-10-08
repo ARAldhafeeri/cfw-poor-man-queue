@@ -221,6 +221,7 @@ export default {
     const handler = (messages: Messages) => {
       // some logic could be as simple as hitting a rest api
       // with retry logic ( like upstash qstash product)
+      // don't throw errors return status {status: false, error: "...."}
     };
 
     ctx.waitUntil((queueDO as any).runScheduledProcessing(handler));

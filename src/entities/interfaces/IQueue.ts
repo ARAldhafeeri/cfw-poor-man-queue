@@ -4,7 +4,7 @@ import { IPayloadStorage } from "./IPayloadStorage";
 import { IMessageRepository } from "./IMessageRepository";
 import { IMemoryManager } from "./IMemoryManager";
 import { IRetryStrategy } from "./IRetryStrategy";
-import { IRequestHandler, IErrorHandler } from "./IRequestHandler";
+import { IRequestHandler, IErrorHandler, Status } from "./IRequestHandler";
 
 /**
  * Queue - The Core Domain/Service Class
@@ -33,6 +33,6 @@ export interface IQueue {
   getQueueStats(): Promise<any>;
   forceReload(): Promise<void>;
   runScheduledProcessing(
-    handler: (messages: Message[]) => Promise<void> | void
+    handler: (messages: Message) => Promise<Status> | void
   ): Promise<void>;
 }

@@ -5,6 +5,7 @@ export type Environment = {
     readonly DO: DurableObjectState;
     readonly STORAGE: R2Bucket;
     readonly SIMPLE_QUEUE: DurableObjectNamespace;
+    readonly D1: D1Database;
   };
   Variables: {
     MAX_PAYLOAD_SIZE: string;
@@ -27,6 +28,20 @@ export interface Message {
   size: number;
   isLarge: boolean;
   error?: string;
+}
+
+/**
+ * Temporal queue message
+ */
+export interface TemporalMessage extends Message {
+  data: { memories: string[]; agentId: string };
+}
+
+/**
+ * TODO: Behavioral Queue Message
+ */
+export interface TemporalMessage extends Message {
+  data: { memories: string[]; agentId: string };
 }
 
 export interface QueueLimits {

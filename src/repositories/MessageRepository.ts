@@ -12,7 +12,7 @@ export class MessageRepository implements IMessageRepository {
   ) {}
 
   async loadMessages(limit: number): Promise<{ messages: Message[] }> {
-    console.log("limit", limit);
+    console.log("limit", this.dependencies.walStorageName);
     try {
       const objects = await this.dependencies.storage.list({
         prefix: this.dependencies.walStorageName,
@@ -120,7 +120,7 @@ export class MessageRepository implements IMessageRepository {
   async popBatch(): Promise<Message[]> {
     try {
       const objects = await this.dependencies.storage.list({
-        prefix: "wal/",
+        prefix: this.dependencies.walStorageName,
         limit: 1,
       });
 
@@ -160,7 +160,7 @@ export class MessageRepository implements IMessageRepository {
     try {
       // Save as a single-message batch with timestamp ensuring it's processed later
       const retryTimestamp = Date.now();
-      const batchKey = `wal/batch_${retryTimestamp}_retry_${message.id}.json`;
+      const batchKey = `${this.dependencies.walStorageName}/batch_${retryTimestamp}_retry_${message.id}.json`;
 
       const batchData = {
         batchId: batchKey,
@@ -170,7 +170,7 @@ export class MessageRepository implements IMessageRepository {
         isRetryBatch: true,
       };
 
-      await this.dependencies.storage.put(batchKey, batchData);
+      await this.dependencies.storage.put(batchKey, JSON.stringify(batchData));
     } catch (error) {
       console.error(`Failed to requeue message ${message.id}:`, error);
       throw error;
